@@ -1,0 +1,118 @@
+
+Exercício 1 — Reconhecimento de SQL Injection
+
+1. Payload: ' OR '1'='1
+
+Resultado observado:
+A aplicação devolveu todas as notas, incluindo a nota secreta com o conteúdo "The admin password is hunter2.".
+
+Explicação:
+A função search_notes() é vulnerável a SQL injection porque constrói a query por concatenação direta de strings:
+
+SELECT id, title, body FROM notes WHERE title LIKE '%<input>%'
+
+Ao introduzir o payload ' OR '1'='1, o atacante fecha a string do LIKE e injeta uma condição lógica sempre verdadeira. Assim, a cláusula WHERE deixa de filtrar apenas pelo título e passa a devolver todos os registos. O enunciado identifica explicitamente esta vulnerabilidade como resultante do uso de concatenação de strings em SQL.
+
+Conclusão:
+Um atacante consegue obter acesso a registos que não deveriam ser devolvidos, incluindo informação sensível.
+
+
+2. Payload: ' UNION SELECT 1, sql, '' FROM sqlite_master --
+
+Resultado observado:
+A aplicação devolveu uma linha com:
+
+CREATE TABLE notes (id INTEGER PRIMARY KEY, title TEXT, body TEXT)
+
+seguida também das notas normais.
+
+Explicação:
+Este payload usa UNION SELECT para juntar resultados artificiais à query original. Em SQLite, a tabela sqlite_master contém metadados sobre a base de dados, incluindo os comandos SQL usados para criar tabelas e outros objetos. Ao consultar essa tabela, o atacante consegue descobrir a estrutura interna da base de dados, incluindo nomes de tabelas e colunas.
+
+Conclusão:
+Um atacante pode enumerar o esquema da base de dados, o que facilita ataques mais avançados.
+
+
+3. Payload: ' UNION SELECT 1, title, body FROM notes --
+
+Resultado observado:
+A aplicação devolveu os conteúdos da tabela notes, incluindo as entradas:
+- Reminder
+- Secret
+- Welcome
+
+e o conteúdo secreto "The admin password is hunter2.".
+
+Explicação:
+Depois de identificar a estrutura da tabela, o atacante usa UNION SELECT para extrair diretamente os campos title e body. Assim, a vulnerabilidade deixa de servir apenas para contornar filtros e passa a permitir exfiltração direta de dados. O enunciado pergunta explicitamente que informação pode um atacante extrair, e este teste mostra que a resposta inclui os próprios conteúdos armazenados na base de dados.
+
+Conclusão:
+Um atacante pode extrair o conteúdo completo da tabela e, num cenário real, possivelmente de outras tabelas com dados sensíveis.
+
+
+Exercício 2 — Command Injection
+
+Resultado observado:
+No Windows, a exploração da command injection não apareceu de forma tão limpa como apareceria em Unix/Linux, porque o comando construído pela aplicação inclui quebras de linha reais dentro do echo, o que interfere com a forma como o cmd.exe interpreta a string. Ainda assim, ao introduzir "note.txt & echo INJECTED" como nome de ficheiro, ficou demonstrado que o input do utilizador é concatenado diretamente num comando executado por os.system().
+
+Explicação:
+A função export_note() obtém o nome do ficheiro a partir do utilizador e constrói o seguinte comando:
+
+cmd = f"echo 'Title: {row[0]}\nBody: {row[1]}' > {filename}"
+os.system(cmd)
+
+O problema é que filename não é tratado apenas como dados. Como é passado diretamente à shell, caracteres especiais como &, ;, | ou crase podem ser interpretados como operadores do sistema operativo. No ambiente Windows, a presença da quebra de linha dentro do echo fez com que a demonstração visual fosse menos linear, mas a vulnerabilidade continua a ser a mesma: o programa trata input não confiável como parte de um comando do sistema operativo.
+
+O que um atacante poderia alcançar num servidor real:
+Num servidor real, esta vulnerabilidade permitiria executar comandos arbitrários com os privilégios do processo da aplicação. Isso poderia permitir:
+- leitura de ficheiros;
+- enumeração do sistema;
+- recolha de informação sobre utilizadores e ambiente;
+- e potencial compromisso mais grave do serviço.
+
+
+Exercício 3 — Remediação segura da SQL Injection
+
+Correção aplicada:
+A função search_notes() foi modificada para usar queries parametrizadas com ?, em vez de concatenar diretamente o input do utilizador. A funcionalidade de pesquisa com LIKE foi preservada construindo-se em Python o padrão %query% e passando-o como parâmetro para a query.
+
+Resultado após correção:
+Depois da alteração, os payloads:
+- ' OR '1'='1
+- ' UNION SELECT 1, sql, '' FROM sqlite_master --
+- ' UNION SELECT 1, title, body FROM notes --
+
+deixaram de ser interpretados como instruções SQL e passaram a ser tratados como texto literal de pesquisa. Em todos os casos, o resultado observado foi "No notes found".
+
+Conclusão:
+A vulnerabilidade de SQL injection foi eliminada, porque o input do utilizador deixou de poder alterar a estrutura da query.
+
+
+Exercício 4 — Remediação segura da Command Injection
+
+Correção aplicada:
+A função export_note() foi corrigida removendo a chamada a os.system() e substituindo-a por escrita direta para ficheiro com open(). Além disso, foi feita validação/sanitização do nome do ficheiro, rejeitando entradas perigosas com caracteres ou sequências como "..", "/", "\\", ";", "&", "|" e crase.
+
+Resultado após correção:
+- O uso normal com note.txt continuou a funcionar corretamente.
+- Os payloads:
+  - note.txt & echo INJECTED
+  - note.txt & whoami
+  - note.txt & dir
+
+passaram a ser rejeitados com a mensagem "Invalid filename".
+
+Conclusão:
+A vulnerabilidade de command injection foi eliminada, porque já não existe qualquer shell a interpretar o input do utilizador e os nomes de ficheiro perigosos são bloqueados.
+
+
+Exercício 5 — Reflexão
+
+A causa comum entre buffer overflows, vulnerabilidades de string de formato, SQL injection e command injection é a falha em separar corretamente dados de instruções. Em todos estes casos, o programa aceita input controlado pelo atacante e acaba por interpretá-lo de forma mais poderosa do que deveria. Nuns casos, isso permite manipular memória; noutros, alterar queries SQL ou comandos do sistema operativo.
+
+A validação de entradas, por si só, não é suficiente como estratégia de defesa, porque é muito difícil prever todas as formas possíveis de input malicioso. Uma blacklist pode esquecer caracteres, codificações alternativas ou novos contextos. Por isso, a defesa correta deve ser estrutural: usar parametrização em SQL, evitar a shell quando não é necessária, e recorrer a APIs seguras que imponham uma separação clara entre dados e código. Isto foi exatamente o que se verificou neste trabalho ao substituir concatenação por queries parametrizadas e ao remover os.system().
+
+Os princípios de parametrização e privilégio mínimo aplicam-se a ambos os trabalhos. Na Semana 12, a parametrização impediu que o input alterasse o significado da query SQL. Já o privilégio mínimo reduz o impacto caso exista uma falha: mesmo que a aplicação seja explorada, o atacante fica limitado pelas permissões do processo. Na Semana 11, o mesmo princípio ajuda a mitigar consequências de exploração de memória.
+
+Embora tanto os buffer overflows como as format strings possam expor a stack, diferem no mecanismo de ataque. Num buffer overflow, o atacante escreve para além dos limites de um buffer e pode corromper variáveis, endereços de retorno e controlo de fluxo. Numa format string, o atacante abusa do interpretador de formatos para ler ou escrever memória de forma indireta, sem necessariamente ultrapassar os limites de um buffer. A diferença está, portanto, no modo como a memória é acedida e manipulada.
+

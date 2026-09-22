@@ -1,0 +1,35 @@
+Questão 1:
+
+
+Confirmação - 
+(.venv) heldercruz@MacBook-Air-de-Helder S7 % echo -n "user=helder&role=user" > msg.txt
+(.venv) heldercruz@MacBook-Air-de-Helder S7 % python3 mac_sha256.py setup chave.key
+(.venv) heldercruz@MacBook-Air-de-Helder S7 % python3 mac_sha256.py mac msg.txt chave.key
+(.venv) heldercruz@MacBook-Air-de-Helder S7 % xxd -p -c 256 msg.txt.mac
+c873c4549f696e4a695973c90eb54e11c125c529dba0db4ccfdde1ba1ab1d7d7
+(.venv) heldercruz@MacBook-Air-de-Helder S7 % python3 mac_sha256_attack.py \
+> "user=helder&role=user" \
+> "c873c4549f696e4a695973c90eb54e11c125c529dba0db4ccfdde1ba1ab1d7d7" \
+> "&admin=true" \
+> 32 \
+> msg_forged.txt
+Mensagem forjada guardada em: msg_forged.txt
+Novo MAC guardado em: msg_forged.txt.mac
+Novo MAC (hex): 6c723fca23dda272d6c29d920e68d348f73b99583765cefbfde722b509e8f954
+Mensagem forjada (hex): 757365723d68656c64657226726f6c653d7573657280000000000000000001a82661646d696e3d74727565
+(.venv) heldercruz@MacBook-Air-de-Helder S7 % python3 mac_sha256.py ver msg_forged.txt chave.key
+True
+(.venv) heldercruz@MacBook-Air-de-Helder S7 % xxd msg_forged.txt
+00000000: 7573 6572 3d68 656c 6465 7226 726f 6c65  user=helder&role
+00000010: 3d75 7365 7280 0000 0000 0000 0000 01a8  =user...........
+00000020: 2661 646d 696e 3d74 7275 65              &admin=true
+(.venv) heldercruz@MacBook-Air-de-Helder S7 % 
+
+
+
+Resposta - 
+Ao acrescentar &admin=true, a nova mensagem não é apenas a concatenação direta ao texto original. 
+O SHA-256 introduz primeiro o seu padding: um byte 0x80, seguido de zeros, e no fim o comprimento da mensagem original (k || m) em bits. 
+Como a chave tem 32 bytes e a mensagem original tem 21 bytes, o comprimento total antes do padding é 53 bytes, ou seja, 424 bits (0x01a8). 
+Por isso, a mensagem forjada fica: user=helder&role=user || 0x80 || 0x00... || 0x01a8 || &admin=true
+É precisamente esse mecanismo que permite o length extension attack.

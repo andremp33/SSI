@@ -1,0 +1,23 @@
+Questão 1:
+
+Em otp.py, a chave é gerada com um gerador criptograficamente seguro (CSPRNG), logo é impraticável 
+prever/reconstruir a chave a partir do criptograma. 
+
+Em bad_otp.py, a chave vem de um PRNG inseguro inicializado com apenas 2 bytes de seed, o que limita 
+a chave a 2¹⁶ possibilidades; isso torna viável um ataque por força bruta à seed e permite recuperar 
+o texto-limpo.
+
+Questão 2:
+
+Não. A “segurança absoluta” do OTP só vale quando a chave é verdadeiramente aleatória, secreta, 
+usada uma única vez e com tamanho ≥ mensagem. No bad_otp.py essa premissa falha porque a chave é 
+gerada por um PRNG previsível com espaço de seeds pequeno (2¹⁶), logo a chave não é aleatória no 
+sentido criptográfico e o ataque não contradiz o resultado teórico do OTP.
+
+Questão 3:
+
+Se reutilizares a mesma chave K em duas mensagens P1 e P2, obténs C1 = P1 ⊕ K e C2 = P2 ⊕ K. 
+Ao fazer C1 ⊕ C2 cancela-se a chave e fica P1 ⊕ P2. Isso revela relações/estrutura entre as 
+mensagens (padrões, espaços, partes previsíveis) e permite ataques do tipo crib-dragging; 
+com algum texto conhecido/expectável numa das mensagens, pode-se recuperar partes significativas 
+(ou tudo) da outra. Ou seja, reutilização de chave torna o ataque muito mais fácil.

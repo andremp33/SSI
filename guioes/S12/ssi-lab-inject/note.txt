@@ -1,0 +1,2 @@
+Title: Welcome
+Body: This is your first note.

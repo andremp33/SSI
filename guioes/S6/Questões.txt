@@ -1,0 +1,30 @@
+Questão 1:
+
+Se usarmos um nonce fixo, por exemplo sempre tudo a 0, a cifra vai gerar sempre a mesma sequência de bytes para a mesma chave. Isso é um problema grande numa cifra sequencial como a ChaCha20, porque acaba por reutilizar a mesma keystream em mensagens diferentes.
+Quando isso acontece, dois ficheiros cifrados com a mesma chave e o mesmo nonce ficam relacionados entre si. Um atacante pode fazer operações entre os criptogramas e conseguir obter informação sobre os textos originais. Se ele já souber ou conseguir adivinhar parte de uma das mensagens, pode até conseguir descobrir partes da outra.
+Ou seja, usar um nonce fixo compromete seriamente a segurança da cifra. Por isso, o nonce não deve ser reutilizado com a mesma chave, devendo ser diferente em cada cifra.
+
+Questão 2:
+
+Ao alterar apenas 1 bit do texto-limpo e cifrar novamente com a mesma chave e o mesmo nonce, altera-se apenas 1 bit no criptograma, na posição correspondente.
+Acontece porque o ChaCha20, porque é um cifra sequencial síncrona. O criptograma é obtido fazendo XOR entre o texto-limpo e a keystream gerada pela cifra.
+Como a keystream é exatamente a mesma quando se usa a mesma chave e o mesmo nonce, mudar um único bit no texto-limpo só vai mudar esse mesmo bit no resultado final.
+Ou seja, não há difusão. Uma pequena alteração no input não se espalha por vários bits do output, mas sim 1 bit do criptograma.
+
+Questão 3:
+No modo CTR, se alterarmos 1 bit do criptograma, altera-se 1 bit na mensagem original, na mesma posição.
+No modo CBC, se alterarmos 1 bit do criptograma o bloco correspondente fica muito alterado e no bloco seguinte altera-se 1 bit na mesma posição.
+
+Questão 4: 
+
+No AES-CTR, o chacha20_int_attck.py funciona praticamente da mesma forma que na ChaCha20, porque o modo CTR também funciona como cifra sequencial. Assim, é possível alterar partes do criptograma e obter mudanças controladas no texto decifrado.
+No AES-CBC, isso já não acontece da mesma forma. Alterar o criptograma também altera o texto decifrado mas o efeito não é controlado: estraga um bloco inteiro e ainda afeta o seguinte.
+Ou seja em CTR, o ataque funciona bem e em CBC, o ataque não permite fazer alterações limpas no texto.
+
+Questão 5: 
+
+O salt e o nonce têm funções diferentes.
+O salt é usado na derivação da chave a partir da passphrase, neste caso com PBKDF2. Serve para garantir que a mesma passphrase não gera sempre a mesma chave. Assim, mesmo que dois utilizadores usem a mesma password, as chaves derivadas podem ser diferentes, porque o salt é diferente. Também ajuda a proteger contra ataques com tabelas pré-computadas.
+O nonce é usado na própria cifra ChaCha20. Serve para garantir que, mesmo usando a mesma chave, não se gera sempre a mesma sequência de cifra. Isso evita reutilização da keystream, o que seria um problema grave de segurança.
+Por isso, sim, os dois são necessários em conjunto, o salt protege a fase de derivação da chave. Já o nonce protege a fase de cifra.
+Um não substitui o outro, porque cada um resolve um problema diferente.

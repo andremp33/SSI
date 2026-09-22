@@ -1,0 +1,214 @@
+1
+
+1.1 - 
+alunos4@ssi:/home/ubuntu/S4$ ls -l
+total 16
+-rwsr-xr-x 1 root   root   9272 Mar  2 14:21 backupssi
+-rw-rw-r-- 1 ubuntu ubuntu  612 Mar  2 14:21 backupssi.c
+alunos4@ssi:/home/ubuntu/S4$ ./backupssi
+Directory FD is 3
+mkdir /root/backupssi: File exists
+$ exit
+alunos4@ssi:/home/ubuntu/S4$ 
+
+
+1.2 - O programa abre /root enquanto ainda tem privilégios (setuid root), obtendo o descritor FD=3
+Depois baixa privilégios com setuid(getuid()), mas não fecha o descritor nem o marca como close-on-exec
+Como os descritores de ficheiro são herdados através de execve por defeito, a shell (já sem privilégios) herda o FD aberto para /root, mantendo uma “capability” que permite acesso indireto a recursos em /root apesar de ter perdido o EUID 0
+
+
+1.3 - 
+alunos4@ssi:/home/ubuntu/S4$ whoami
+alunos4
+alunos4@ssi:/home/ubuntu/S4$ cd /home/ubuntu/S4
+alunos4@ssi:/home/ubuntu/S4$ ./backupssi
+Directory FD is 3
+mkdir /root/backupssi: File exists
+$ echo "PID=$$"
+PID=17507
+$ ls -l /proc/$$/fd
+total 0
+lrwx------ 1 alunos4 alunos4 64 Mar  2 14:38 0 -> /dev/pts/1
+lrwx------ 1 alunos4 alunos4 64 Mar  2 14:38 1 -> /dev/pts/1
+lrwx------ 1 alunos4 alunos4 64 Mar  2 14:38 10 -> /dev/tty
+lrwx------ 1 alunos4 alunos4 64 Mar  2 14:38 2 -> /dev/pts/1
+lr-x------ 1 alunos4 alunos4 64 Mar  2 14:38 3 -> /root
+$ readlink /proc/$$/fd/3 
+/root
+$ ls /root
+ls: cannot open directory '/root': Permission denied
+$ exit
+alunos4@ssi:/home/ubuntu/S4$ 
+
+
+Executamos backupssi com o utilizador que criamos (alunos4)
+O programa imprimiu Directory FD is 3 e lançou uma shell
+Na shell, confirmamos o leak listando os descritores em /proc/$$/fd, onde se observa que o descritor 3 aponta para /root (3 -> /root), confirmado por readlink /proc/$$/fd/3 que devolve /root
+Apesar disso, um acesso direto a /root falha (ls /root - Permission denied)
+Assim, fica provado que o descritor aberto quando o programa tinha privilégios foi herdado após o execve(), mantendo uma “capability” privilegiada mesmo depois do setuid(getuid())
+
+
+
+1.4 - Código já com a correção:
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+int main() {
+    int dfd;
+    char *argv[2];
+
+    dfd = open("/root", O_RDONLY | O_CLOEXEC);
+    if (dfd == -1) {
+        perror("open /root");
+        exit(1);
+    }
+
+    printf("Directory FD is %d\n", dfd);
+
+    if (mkdir("/root/backupssi", 0700) == -1) {
+        perror("mkdir /root/backupssi");
+    }
+
+    /* Drop privileges */
+    if (setuid(getuid()) == -1) {
+        perror("setuid");
+        exit(1);
+    }
+
+    close(dfd);
+
+    argv[0] = "/bin/sh";
+    argv[1] = NULL;
+    execve(argv[0], argv, NULL);
+
+    perror("execve");
+    return 0;
+}
+
+ubuntu@ssi:~/S4$ cd /home/ubuntu/S4
+ubuntu@ssi:~/S4$ sudo nano backupssi.c
+ubuntu@ssi:~/S4$ gcc -o backupssi backupssi.c
+ubuntu@ssi:~/S4$ sudo chown root:root backupssi
+ubuntu@ssi:~/S4$ sudo chmod 4755 backupssi
+ubuntu@ssi:~/S4$ ls -l backupssi
+-rwsr-xr-x 1 root root 9312 Mar  2 14:57 backupssi
+ubuntu@ssi:~/S4$ sudo su - alunos4
+alunos4@ssi:~$ cd /home/ubuntu/S4
+alunos4@ssi:/home/ubuntu/S4$ ./backupssi
+Directory FD is 3
+mkdir /root/backupssi: File exists
+$ ls -l /proc/$$/fd
+total 0
+lrwx------ 1 alunos4 alunos4 64 Mar  2 14:58 0 -> /dev/pts/1
+lrwx------ 1 alunos4 alunos4 64 Mar  2 14:58 1 -> /dev/pts/1
+lrwx------ 1 alunos4 alunos4 64 Mar  2 14:58 10 -> /dev/tty
+lrwx------ 1 alunos4 alunos4 64 Mar  2 14:58 2 -> /dev/pts/1
+$ 
+
+
+Para eliminar o capability leak, alteramos a abertura de /root para usar O_CLOEXEC, garantindo que o descritor é fechado automaticamente no execve()
+Além disso, fechamos explicitamente o descritor com close(dfd) antes de lançar /bin/sh
+Após recompilar e executar como alunos4, a listagem de /proc/$$/fd na shell já não mostra nenhum FD a apontar para /root, confirmando que o descritor deixou de ser herdado
+
+
+
+
+2
+
+2.1 - 
+ubuntu@ssi:~/S4$ cd /home/ubuntu/S4
+ubuntu@ssi:~/S4$ gcc -o passwdleak passwdleak.c
+ubuntu@ssi:~/S4$ sudo chown root:root passwdleak
+ubuntu@ssi:~/S4$ sudo chmod 4755 passwdleak
+ubuntu@ssi:~/S4$ ls -l passwdleak
+-rwsr-xr-x 1 root root 9128 Mar  2 15:08 passwdleak
+ubuntu@ssi:~/S4$ sudo su - alunos4
+alunos4@ssi:~$ cd /home/ubuntu/S4
+alunos4@ssi:/home/ubuntu/S4$ ./passwdleak
+Passwd FD leaked: 3
+$ 
+
+
+2.2 -
+$ ls -l /proc/$$/fd
+total 0
+lrwx------ 1 alunos4 alunos4 64 Mar  2 15:11 0 -> /dev/pts/1
+lrwx------ 1 alunos4 alunos4 64 Mar  2 15:11 1 -> /dev/pts/1
+lrwx------ 1 alunos4 alunos4 64 Mar  2 15:11 10 -> /dev/tty
+lrwx------ 1 alunos4 alunos4 64 Mar  2 15:11 2 -> /dev/pts/1
+l-wx------ 1 alunos4 alunos4 64 Mar  2 15:11 3 -> /etc/passwd
+$ readlink /proc/$$/fd/3
+/etc/passwd
+$ 
+
+A vulnerabilidade é capability leaking via descritor de ficheiro
+O programa setuid root abre /etc/passwd com permissões de escrita/append e depois executa /bin/sh sem fechar o descritor nem usar FD_CLOEXEC
+Como os FDs são herdados no execve, a shell do utilizador normal herda o FD (no caso, 3  /etc/passwd), ficando com capacidade de escrita num ficheiro crítico
+
+
+
+2.3 -
+O exploit consiste em abusar do descritor de ficheiro herdado pela shell (FD leakado com escrita para /etc/passwd) para acrescentar uma nova entrada no final do ficheiro
+A sugestão do enunciado cria um utilizador com UID/GID 0, pelo que após a escrita passa a existir uma conta com privilégios de root
+
+
+2.4 -
+Se um atacante conseguir escrever em /etc/passwd através do FD leakado, consegue criar/alterar contas do sistema. 
+Ao acrescentar uma entrada com UID=0 e GID=0, passa a existir um utilizador equivalente a root, permitindo obter privilégios totais. 
+Isto compromete completamente a confidencialidade, integridade e disponibilidade do sistema.
+
+
+2.5 - 
+#include <stdio.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <unistd.h> 
+
+int main() {
+    int fd = open("/etc/passwd", O_WRONLY | O_APPEND | O_CLOEXEC);
+    if (fd < 0) {
+        perror("open /etc/passwd");
+        exit(1);
+    }
+
+    printf("Passwd FD leaked: %d\n", fd);
+
+    if (setuid(getuid()) == -1) {
+        perror("setuid");
+        exit(1);
+    }
+
+    close(fd);
+
+    execl("/bin/sh", "sh", NULL);
+
+    perror("execl");
+    return 0;
+}
+
+
+
+ubuntu@ssi:~/S4$ gcc -o passwdleak passwdleak.c
+ubuntu@ssi:~/S4$ sudo chown root:root passwdleak
+ubuntu@ssi:~/S4$ sudo chmod 4755 passwdleak
+ubuntu@ssi:~/S4$ ls -l passwdleak
+-rwsr-xr-x 1 root root 9168 Mar  2 15:29 passwdleak
+ubuntu@ssi:~/S4$ sudo su - alunos4
+alunos4@ssi:~$ cd /home/ubuntu/S4
+alunos4@ssi:/home/ubuntu/S4$ ./passwdleak
+Passwd FD leaked: 3
+$ ls -l /proc/$$/fd
+total 0
+lrwx------ 1 alunos4 alunos4 64 Mar  2 15:29 0 -> /dev/pts/1
+lrwx------ 1 alunos4 alunos4 64 Mar  2 15:29 1 -> /dev/pts/1
+lrwx------ 1 alunos4 alunos4 64 Mar  2 15:29 10 -> /dev/tty
+lrwx------ 1 alunos4 alunos4 64 Mar  2 15:29 2 -> /dev/pts/1
+$ 
+
+
+
+Após a correção (uso de O_CLOEXEC e close(fd) antes do execl), a shell lançada já não contém um descritor a apontar para /etc/passwd em /proc/$$/fd, confirmando que o FD deixou de ser herdado e o capability leak foi eliminado

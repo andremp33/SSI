@@ -1,0 +1,11 @@
+(myenv) andre@PcAndre:~/S6$ python3 pbenc_chacha20.py enc msg.txt
+Passphrase:
+(myenv) andre@PcAndre:~/S6$ python3 pbenc_chacha20.py dec msg.txt.enc
+Passphrase:
+(myenv) andre@PcAndre:~/S6$ cat msg.txt.enc.dec
+zd\     ;]M��
+���y�(myenv) andre@PcAndre:~/S6$ python3 pbenc_chacha20.py dec msg.txt.enc
+Passphrase:
+(myenv) andre@PcAndre:~/S6$ cat msg.txt.enc.dec
+mensagem secreta
+(myenv) andre@PcAndre:~/S6$

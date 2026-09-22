@@ -1,0 +1,61 @@
+Testes para o pbenc_aes_ctr_hmac.py:
+
+(.venv) heldercruz@MacBook-Air-de-Helder S7 % echo "mensagem secreta para testar" > msg.txt
+(.venv) heldercruz@MacBook-Air-de-Helder S7 % python3 pbenc_aes_ctr_hmac.py enc msg.txt
+Passphrase: 
+(.venv) heldercruz@MacBook-Air-de-Helder S7 % python3 pbenc_aes_ctr_hmac.py dec msg.txt.enc
+Passphrase: 
+(.venv) heldercruz@MacBook-Air-de-Helder S7 % cat msg.txt.enc.dec
+mensagem secreta para testar
+(.venv) heldercruz@MacBook-Air-de-Helder S7 % cp msg.txt.enc alterado.enc
+(.venv) heldercruz@MacBook-Air-de-Helder S7 % python3 - <<'PY'
+with open("alterado.enc", "r+b") as f:
+    data = bytearray(f.read())
+    data[40] ^= 1
+    f.seek(0)
+    f.write(data)
+PY
+(.venv) heldercruz@MacBook-Air-de-Helder S7 % python3 pbenc_aes_ctr_hmac.py dec alterado.enc
+Passphrase: 
+Erro: MAC inválido.
+(.venv) heldercruz@MacBook-Air-de-Helder S7 % 
+
+
+Para validar o HMAC, foi feita uma alteração manual a um byte do ficheiro cifrado. 
+Ao tentar desencriptar esse ficheiro adulterado, o programa devolveu o erro MAC inválido, mostrando que qualquer modificação do criptograma é detetada antes da desencriptação. 
+Isto confirma o funcionamento correto do esquema encrypt-then-MAC.
+
+
+
+
+
+
+Testes para o pbenc_aes_gcm.py:
+
+(.venv) heldercruz@MacBook-Air-de-Helder S7 % echo "mensagem secreta com AES GCM" > msg2.txt
+(.venv) heldercruz@MacBook-Air-de-Helder S7 % python3 pbenc_aes_gcm.py enc msg2.txt
+Passphrase: 
+(.venv) heldercruz@MacBook-Air-de-Helder S7 % python3 pbenc_aes_gcm.py dec msg2.txt.enc
+Passphrase: 
+(.venv) heldercruz@MacBook-Air-de-Helder S7 % cat msg2.txt.enc.dec
+mensagem secreta com AES GCM
+(.venv) heldercruz@MacBook-Air-de-Helder S7 % cp msg2.txt.enc alterado_gcm.enc
+(.venv) heldercruz@MacBook-Air-de-Helder S7 % python3 - <<'PY'
+with open("alterado_gcm.enc", "r+b") as f:
+    data = bytearray(f.read())
+    data[40] ^= 1
+    f.seek(0)
+    f.write(data)
+PY
+(.venv) heldercruz@MacBook-Air-de-Helder S7 % python3 pbenc_aes_gcm.py dec alterado_gcm.enc
+Passphrase: 
+Erro: Tag inválida.
+(.venv) heldercruz@MacBook-Air-de-Helder S7 % 
+
+
+
+
+
+Resposta à Questão 2:
+O criptograma final difere porque AES-CTR + HMAC guarda separadamente o criptograma e o HMAC, enquanto AES-GCM produz diretamente criptograma autenticado com tag integrada. 
+Por isso, o ficheiro em GCM tende a ter menos overhead e a implementação é mais simples.
